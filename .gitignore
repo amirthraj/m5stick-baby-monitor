@@ -1,0 +1,10 @@
+build/
+*.elf
+*.bin
+*.hex
+*.map
+.arduino15/
+.DS_Store
+Thumbs.db
+.vscode/
+secrets.h
