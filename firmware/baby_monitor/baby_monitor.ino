@@ -37,10 +37,10 @@
 
 // MQTT broker (HiveMQ free public broker — no account needed)
 // For a private setup, replace with your broker's IP or hostname
-const char* MQTT_BROKER = "broker.hivemq.com";
-const int MQTT_PORT = 1883;
-const char* MQTT_TOPIC = "babymonitor-k9m2xw47/alerts";  // unique — change if you want
-const char* MQTT_CLIENT_ID = "m5stick-babymon-001";      // must be unique on the broker
+const char* MQTT_BROKER    = "broker.hivemq.com";
+const int   MQTT_PORT      = 1883;
+const char* MQTT_TOPIC     = "babymonitor-k9m2xw47/alerts";  // unique — change if you want
+const char* MQTT_CLIENT_ID = "m5stick-babymon-001";  // must be unique on the broker
 
 // PIR sensor pin (GROVE port on M5StickC Plus 2)
 // Set to true once the AS312 PIR sensor arrives and is connected
@@ -49,34 +49,34 @@ const char* MQTT_CLIENT_ID = "m5stick-babymon-001";      // must be unique on th
 
 // Sound detection
 // Increase if you get too many false alarms; decrease if missing real cries
-#define SOUND_THRESHOLD 1500   // RMS amplitude (0-32767 range)
-#define SOUND_DURATION_MS 600  // sound must exceed threshold for this many ms
+#define SOUND_THRESHOLD    1500   // RMS amplitude (0-32767 range)
+#define SOUND_DURATION_MS  400    // sound must exceed threshold for this many ms
 
 // Alert cooldown — prevents rapid repeated alerts for the same event
-#define ALERT_COOLDOWN_MS 15000  // 15 seconds
+#define ALERT_COOLDOWN_MS  15000  // 15 seconds
 
 // Display brightness (0–255)
 // 20 = very dim, good for dark room next to baby
 // 80 = readable in daylight
-#define DISPLAY_BRIGHTNESS 20
+#define DISPLAY_BRIGHTNESS      20
 
 // Auto-off: display turns off after this many ms of no alerts/activity
 // Press the M5 side button (BtnA) to wake it back up
-#define DISPLAY_SLEEP_MS 30000  // 30 seconds
+#define DISPLAY_SLEEP_MS    30000  // 30 seconds
 
 // How long the alert screen stays on before dimming again
-#define ALERT_SCREEN_MS 8000  // 8 seconds
+#define ALERT_SCREEN_MS      8000  // 8 seconds
 
 // Dim alert colors (easier on eyes in a dark room)
-#define COLOR_ALERT_SOUND M5.Display.color565(140, 20, 20)  // dark red
-#define COLOR_ALERT_MOTION M5.Display.color565(140, 80, 0)  // dark amber
-#define COLOR_READY M5.Display.color565(0, 80, 20)          // dark green
-#define COLOR_DIM_TEXT M5.Display.color565(180, 180, 180)   // soft white
-#define COLOR_DIM_GREEN M5.Display.color565(0, 160, 50)     // dim green
-#define COLOR_DIM_GREY M5.Display.color565(60, 60, 60)      // dark grey
+#define COLOR_ALERT_SOUND   M5.Display.color565(140,  20,  20)  // dark red
+#define COLOR_ALERT_MOTION  M5.Display.color565(140,  80,   0)  // dark amber
+#define COLOR_READY         M5.Display.color565(  0,  80,  20)  // dark green
+#define COLOR_DIM_TEXT      M5.Display.color565(180, 180, 180)  // soft white
+#define COLOR_DIM_GREEN     M5.Display.color565(  0, 160,  50)  // dim green
+#define COLOR_DIM_GREY      M5.Display.color565( 60,  60,  60)  // dark grey
 
 // BLE identifiers (UUIDs — these can stay as-is)
-#define BLE_SERVICE_UUID "ba5e0001-c7e8-4a5c-b9e1-2a3e7b8c9d0f"
+#define BLE_SERVICE_UUID        "ba5e0001-c7e8-4a5c-b9e1-2a3e7b8c9d0f"
 #define BLE_CHARACTERISTIC_UUID "ba5e0002-c7e8-4a5c-b9e1-2a3e7b8c9d0f"
 
 // ============================================================
@@ -84,26 +84,26 @@ const char* MQTT_CLIENT_ID = "m5stick-babymon-001";      // must be unique on th
 // ============================================================
 
 // BLE
-BLEServer* pBleServer = nullptr;
-BLECharacteristic* pBleCharac = nullptr;
-bool bleConnected = false;
+BLEServer*         pBleServer     = nullptr;
+BLECharacteristic* pBleCharac     = nullptr;
+bool               bleConnected   = false;
 
 // WiFi / MQTT
-WiFiClient wifiClient;
-PubSubClient mqttClient(wifiClient);
-bool wifiOk = false;
+WiFiClient    wifiClient;
+PubSubClient  mqttClient(wifiClient);
+bool          wifiOk = false;
 
 // Alert timing
-unsigned long lastSoundAlertMs = 0;
+unsigned long lastSoundAlertMs  = 0;
 unsigned long lastMotionAlertMs = 0;
 
 // Display sleep tracking
-unsigned long lastActivityMs = 0;  // last time display was woken
-bool displayOn = true;
+unsigned long lastActivityMs  = 0;   // last time display was woken
+bool          displayOn       = true;
 
 // Sound detection state
 unsigned long soundAboveThresholdSince = 0;
-bool soundTriggering = false;
+bool          soundTriggering          = false;
 
 // Mic buffer
 static int16_t micBuffer[512];
@@ -136,7 +136,9 @@ void setupBLE() {
 
   pBleCharac = pService->createCharacteristic(
     BLE_CHARACTERISTIC_UUID,
-    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
+    BLECharacteristic::PROPERTY_READ |
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
   // Add the Client Characteristic Configuration descriptor (required for notify)
   pBleCharac->addDescriptor(new BLE2902());
   pBleCharac->setValue("ready");
@@ -215,11 +217,25 @@ void ensureMqttConnected() {
 // Send alert payload over BLE + MQTT
 // type: "sound" or "motion"
 void sendAlert(const char* type) {
+  // Format uptime as HH:MM:SS
+  unsigned long totalSecs = millis() / 1000;
+  int hh = totalSecs / 3600;
+  int mm = (totalSecs % 3600) / 60;
+  int ss = totalSecs % 60;
+  char uptime[12];
+  snprintf(uptime, sizeof(uptime), "%02d:%02d:%02d", hh, mm, ss);
+
+  // Human-readable alert message
+  const char* message = (strcmp(type, "sound") == 0)
+    ? "Baby is crying!"
+    : "Motion detected!";
+
   // Build JSON payload
-  char payload[128];
+  char payload[160];
   snprintf(payload, sizeof(payload),
-           "{\"type\":\"%s\",\"device\":\"%s\",\"ts\":%lu}",
-           type, MQTT_CLIENT_ID, millis());
+    "{\"alert\":\"%s\",\"device\":\"%s\",\"uptime\":\"%s\"}",
+    message, MQTT_CLIENT_ID, uptime
+  );
 
   Serial.printf("[ALERT] %s\n", payload);
 
@@ -339,9 +355,22 @@ void updateStatusDisplay(int soundLevel) {
   M5.Display.fillScreen(TFT_BLACK);
   M5.Display.setTextSize(2);
 
+  // Title + battery on same line
+  int batPct = M5.Power.getBatteryLevel();  // 0-100
+  bool charging = M5.Power.isCharging();
   M5.Display.setCursor(0, 0);
   M5.Display.setTextColor(COLOR_DIM_TEXT);
-  M5.Display.println("Baby Monitor");
+  M5.Display.print("BabyMon ");
+  uint32_t batColor = batPct > 30
+    ? M5.Display.color565(0, 160, 50)    // green
+    : M5.Display.color565(140, 20, 20);  // red when low
+  M5.Display.setTextColor(batColor);
+  M5.Display.print(batPct);
+  M5.Display.print("%");
+  if (charging) {
+    M5.Display.setTextColor(COLOR_DIM_TEXT);
+    M5.Display.print("+");
+  }
 
   // BLE status
   M5.Display.setCursor(0, 30);
@@ -367,8 +396,8 @@ void updateStatusDisplay(int soundLevel) {
   M5.Display.print("Mic:");
   int barW = map(constrain(soundLevel, 0, 4000), 0, 4000, 0, M5.Display.width() - 45);
   uint32_t barColor = soundLevel >= SOUND_THRESHOLD
-                        ? M5.Display.color565(140, 20, 20)  // dim red
-                        : M5.Display.color565(0, 80, 100);  // dim teal
+    ? M5.Display.color565(140, 20, 20)   // dim red
+    : M5.Display.color565(0, 80, 100);   // dim teal
   M5.Display.fillRect(45, 112, barW, 14, barColor);
 
   // PIR state
@@ -442,8 +471,8 @@ void setup() {
 // ============================================================
 
 void loop() {
-  M5.update();        // update button state
-  mqttClient.loop();  // keep MQTT connection alive
+  M5.update();           // update button state
+  mqttClient.loop();     // keep MQTT connection alive
 
   unsigned long now = millis();
 
