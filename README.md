@@ -87,7 +87,7 @@ Connect with [nRF Connect](https://www.nordicsemi.com/Products/Development-tools
 
 ---
 
-## When the PIR Sensor Arrives
+## if  the PIR Sensor is available
 
 In `baby_monitor.ino`, change:
 
